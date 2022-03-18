@@ -1,59 +1,76 @@
 
-
-import express, { Request, Response, NextFunction } from 'express';
-const express =  require("express");
-
-const app = express();
-
-const PORT = process.env.PORT || 4000;
-
-
-interface LocationWithTimezone {
-    location: string;
-    timezoneName: string;
-    timezoneAbbr: string;
-    utcOffset: number;
-  };
-  
-  const getLocationsWithTimezones = (request: Request, response: Response, next: NextFunction) => {
-    let locations: LocationWithTimezone[] = [
-      {
-        location: 'Germany',
-        timezoneName: 'Central European Time',
-        timezoneAbbr: 'CET',
-        utcOffset: 1
-      },
-      {
-        location: 'China',
-        timezoneName: 'China Standard Time',
-        timezoneAbbr: 'CST',
-        utcOffset: 8
-      },
-      {
-        location: 'Argentina',
-        timezoneName: 'Argentina Time',
-        timezoneAbbr: 'ART',
-        utcOffset: -3
-      },
-      {
-        location: 'Japan',
-        timezoneName: 'Japan Standard Time',
-        timezoneAbbr: 'JST',
-        utcOffset: 9
-      }
-    ];
-  
-    response.status(200).json(locations);
-  };
-  
-  app.get('/timezones', getLocationsWithTimezones);
+import dotenv from 'dotenv';
+dotenv.config();
+import express  from 'express';
+import { join } from 'path';
+import path from 'path';
+import Winston from './config/winston';
 
 
-// define a route handler for the default home page
-app.get( "/", ( req, res ) => {
-    res.send( "Hello world!" );
-} );
+
+import databaseSetup from './startup/database';
+import applicationConfig from './config/application_config';
+import setRoutes from './routes';
 
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+let app: Application;
+
+
+export class Application {
+	app: express.Application;
+	logger: any;
+	
+	
+    public static get config(): any {
+        return applicationConfig;
+	}
+	
+    constructor() {
+		this.app = express();
+		this.logger = Winston
+	}
+
+    async initialize(): Promise<void> {
+		Winston.info("************")
+		Winston.info("* INIT APP *")
+		Winston.info("************")
+		
+		const urlencoded = express.urlencoded;
+		const json = express.json;
+        await databaseSetup();
+	
+		this.app.use(json());
+		this.app.use(urlencoded({ extended: false }));
+	
+		//app.use(express.static(join(path.resolve(), 'public')));
+		this.app.use(express.static(join(path.resolve(), 'public'), { dotfiles: 'allow' }));
+		
+
+		this.setRoutes()
+        await this.startServer(applicationConfig.httpPort);
+    }
+
+
+	private setRoutes() {
+		setRoutes(this.app);
+	}
+
+    private async startServer(port) {
+		if (process.env.NODE_ENV !== "test") {
+			this.app.listen(port, () => {
+				this.logger.info(`Listening on port ${port}.`);
+			});
+		}
+    }
+	
+
+}
+
+if (app == null) {
+	app = new Application();
+	app.initialize()
+}
+
+export default app;
 
